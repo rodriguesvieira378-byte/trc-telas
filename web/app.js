@@ -277,6 +277,41 @@ function startAndroidShare() {
 }
 
 $('btnShare').onclick = () => (isAndroidApp ? startAndroidShare() : startWebShare());
+/* Trocar a tela, janela ou aba compartilhada sem perder o código nem quem está assistindo */
+async function switchScreen() {
+  if (!host) return;
+  let s;
+  try {
+    s = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: host.q.fps, max: host.q.fps }, height: { max: host.q.height } },
+      audio: true
+    });
+  } catch { return; } // cancelou a escolha
+  if (!host) { s.getTracks().forEach(t => t.stop()); return; }
+  const nv = s.getVideoTracks()[0], na = s.getAudioTracks()[0];
+  nv.contentHint = host.q.fps >= 60 ? 'motion' : 'detail';
+  host.pcs.forEach(pc => {
+    pc.getSenders().forEach(sd => {
+      if (!sd.track) return;
+      if (sd.track.kind === 'video') sd.replaceTrack(nv).catch(() => {});
+      else if (sd.track.kind === 'audio' && na) sd.replaceTrack(na).catch(() => {});
+    });
+    tuneSenders(pc, host.q);
+  });
+  const old = host.stream;
+  old.getTracks().forEach(t => { t.onended = null; t.stop(); });
+  host.stream = s;
+  nv.onended = stopShare;
+  $('preview').srcObject = s;
+}
+if (!isAndroidApp && canWebShare) {
+  const b = document.createElement('button');
+  b.className = 'btn ghost'; b.id = 'btnSwitch'; b.type = 'button'; b.textContent = 'Trocar tela';
+  b.style.marginBottom = '10px';
+  $('btnStop').before(b);
+  b.onclick = switchScreen;
+}
+
 $('btnStop').onclick = stopShare;
 
 $('btnCopy').onclick = async () => {
