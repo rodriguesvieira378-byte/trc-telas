@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://trc-telas.vercel.app"><b>Abrir o site</b></a> ·
-  <a href="https://github.com/rodriguesvieira378-byte/trc-telas/raw/main/apk/TRC-TELAS-2.0.apk"><b>Baixar o APK (20 MB)</b></a>
+  <a href="https://github.com/rodriguesvieira378-byte/trc-telas/raw/main/apk/TRC-TELAS-2.1.apk"><b>Baixar o APK (20 MB)</b></a>
 </p>
 
 <p align="center">
@@ -37,10 +37,10 @@
  │  • Android: MediaProjection           │                      │
  └────────────┬─────────────┘            └──────────┬───────────┘
               │       "aperto de mão" inicial       │
-              └──────────▶  servidor PeerJS  ◀──────┘
+              └──────────▶  Supabase Realtime ◀──────┘
 ```
 
-- **WebRTC (PeerJS)**: o vídeo vai direto de um aparelho para o outro. O servidor público do PeerJS só ajuda os dois a se encontrarem.
+- **WebRTC**: o vídeo vai direto de um aparelho para o outro. Os canais Realtime do Supabase só ajudam os dois a se encontrarem.
 - **Android (Java)**: um `Foreground Service` captura a tela com a **MediaProjection** e envia com o **WebRTC nativo** (codificação de vídeo por hardware). A sinalização é feita em Java, por WebSocket, com o mesmo protocolo do site.
 - **Web**: a mesma página (`web/index.html` + `web/app.js`) roda no site e dentro do APK.
 - **Qualidade**: Econômico (15 fps), Normal (30 fps) e Fluido (60 fps), no site e no app.
