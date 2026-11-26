@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://trc-telas.vercel.app"><b>Abrir o site</b></a> ·
-  <a href="https://github.com/rodriguesvieira378-byte/trc-telas/raw/main/apk/TRC-TELAS-2.3.apk"><b>Baixar o APK (20 MB)</b></a>
+  <a href="https://github.com/rodriguesvieira378-byte/trc-telas/raw/main/apk/TRC-TELAS-2.4.apk"><b>Baixar o APK (20 MB)</b></a>
 </p>
 
 <p align="center">

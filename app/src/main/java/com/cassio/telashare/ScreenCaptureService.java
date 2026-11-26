@@ -283,7 +283,7 @@ public class ScreenCaptureService extends Service {
             }
             params.degradationPreference = quality.fps >= 60
                     ? RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
-                    : RtpParameters.DegradationPreference.BALANCED;
+                    : RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION;
             sender.setParameters(params);
         } catch (Exception ignored) { }
     }

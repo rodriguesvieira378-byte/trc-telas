@@ -203,7 +203,8 @@ function tuneSenders(pc, q) {
     if (!params.encodings || !params.encodings.length) params.encodings = [{}];
     params.encodings[0].maxFramerate = q.fps;
     params.encodings[0].maxBitrate = q.kbps * 1000;
-    if (q.fps >= 60) params.degradationPreference = 'maintain-framerate';
+    // 60 fps: prioriza fluidez. Nos outros: mantém a resolução (texto nítido) e baixa o fps se a rede apertar
+    params.degradationPreference = q.fps >= 60 ? 'maintain-framerate' : 'maintain-resolution';
     sender.setParameters(params).catch(() => {});
   });
 }
@@ -232,7 +233,7 @@ function updateHost(nativeViewers) {
   const n = nativeViewers !== undefined ? nativeViewers
     : [...host.pcs.values()].filter(p => p.connectionState === 'connected').length;
   const who = n === 0 ? 'esperando alguém entrar' : n === 1 ? '1 pessoa assistindo' : n + ' pessoas assistindo';
-  $('hostStatus').innerHTML = '<span class="dot"></span>Ao vivo, ' + who + (hostFps && n > 0 ? ' · ' + hostFps : '');
+  $('hostStatus').innerHTML = '<span class="dot"></span>Ao vivo, ' + who + (hostFps && n > 0 ? ' · ' + hostFps : '') + (typeof autoNote === 'string' && nativeSharing ? autoNote : '');
 }
 
 function stopShare() {
@@ -255,9 +256,13 @@ function stopShare() {
  * A página só mostra o código e o status que o app manda por window.__nativeStatus. */
 let nativeSharing = false;
 
+let autoNote = '';
 function startAndroidShare() {
   const code = makeCode();
-  const quality = selectedQuality();
+  let quality = selectedQuality();
+  const c = navigator.connection;
+  autoNote = '';
+  if (c && c.type === 'cellular' && quality !== 'eco') { quality = 'eco'; autoNote = ' · no 4G, qualidade Econômico'; }
   $('btnShare').disabled = true;
   window.__onAndroidCapture = ok => {
     if (!ok) { $('btnShare').disabled = false; return; }
