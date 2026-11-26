@@ -77,6 +77,7 @@ public class ScreenCaptureService extends Service {
     private EglBase egl;
     private PeerConnectionFactory factory;
     private ScreenCapturerAndroid capturer;
+    private FrameRepeater repeater;
     private SurfaceTextureHelper textureHelper;
     private VideoSource source;
     private VideoTrack track;
@@ -155,7 +156,8 @@ public class ScreenCaptureService extends Service {
             });
             textureHelper = SurfaceTextureHelper.create("captura", egl.getEglBaseContext());
             source = factory.createVideoSource(true);
-            capturer.initialize(textureHelper, getApplicationContext(), source.getCapturerObserver());
+            repeater = new FrameRepeater(source.getCapturerObserver());
+            capturer.initialize(textureHelper, getApplicationContext(), repeater);
 
             int[] size = captureSize();
             capturer.startCapture(size[0], size[1], quality.fps);
@@ -191,7 +193,7 @@ public class ScreenCaptureService extends Service {
             w = (int) Math.round(w * k);
             h = (int) Math.round(h * k);
         }
-        return new int[]{w - (w % 2), h - (h % 2)};
+        return new int[]{w - (w % 16), h - (h % 16)}; // múltiplos de 16: alguns decodificadores (iPhone) exigem
     }
 
     /* ---------------- sinalização ---------------- */
@@ -372,6 +374,7 @@ public class ScreenCaptureService extends Service {
                 }
                 if (signal != null) signal.close();
                 if (capturer != null) { try { capturer.stopCapture(); } catch (Exception ignored) { } capturer.dispose(); }
+                if (repeater != null) repeater.dispose();
                 if (track != null) track.dispose();
                 if (source != null) source.dispose();
                 if (textureHelper != null) textureHelper.dispose();
@@ -391,5 +394,59 @@ public class ScreenCaptureService extends Service {
         @Override public void onSetSuccess() { }
         @Override public void onCreateFailure(String e) { }
         @Override public void onSetFailure(String e) { }
+    }
+
+    /**
+     * A captura de tela do Android só gera quadros quando algo muda na tela. Com a tela parada,
+     * quem entra depois não recebe nenhum quadro e vê tela preta. Aqui guardamos uma cópia do
+     * último quadro e reenviamos a cada 250 ms enquanto a tela estiver parada.
+     */
+    private static final class FrameRepeater implements org.webrtc.CapturerObserver {
+        private final org.webrtc.CapturerObserver out;
+        private final java.util.concurrent.ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
+        private org.webrtc.VideoFrame.I420Buffer copy;
+        private int rotation;
+        private volatile long lastFrameNs;
+
+        FrameRepeater(org.webrtc.CapturerObserver out) {
+            this.out = out;
+            timer.scheduleAtFixedRate(this::tick, 500, 250, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+
+        @Override public void onCapturerStarted(boolean ok) { out.onCapturerStarted(ok); }
+        @Override public void onCapturerStopped() { out.onCapturerStopped(); }
+
+        @Override public void onFrameCaptured(org.webrtc.VideoFrame frame) {
+            lastFrameNs = System.nanoTime();
+            try {
+                org.webrtc.VideoFrame.I420Buffer c = frame.getBuffer().toI420();
+                synchronized (this) {
+                    if (copy != null) copy.release();
+                    copy = c;
+                    rotation = frame.getRotation();
+                }
+            } catch (Exception ignored) { }
+            out.onFrameCaptured(frame);
+        }
+
+        private void tick() {
+            if (System.nanoTime() - lastFrameNs < 300_000_000L) return;
+            org.webrtc.VideoFrame.I420Buffer c;
+            int r;
+            synchronized (this) {
+                if (copy == null) return;
+                copy.retain();
+                c = copy;
+                r = rotation;
+            }
+            org.webrtc.VideoFrame vf = new org.webrtc.VideoFrame(c, r, System.nanoTime());
+            try { out.onFrameCaptured(vf); } catch (Exception ignored) { }
+            vf.release();
+        }
+
+        void dispose() {
+            timer.shutdownNow();
+            synchronized (this) { if (copy != null) { copy.release(); copy = null; } }
+        }
     }
 }
