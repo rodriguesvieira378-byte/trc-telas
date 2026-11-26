@@ -15,9 +15,13 @@
 </p>
 
 <p align="center">
-  <img src="docs/tela-inicio.png" width="260" alt="Tela inicial">
+  <img src="docs/pc-inicio.png" width="300" alt="Tela inicial no PC">
   &nbsp;&nbsp;
-  <img src="docs/tela-compartilhando.png" width="260" alt="Tela de compartilhamento com o código">
+  <img src="docs/pc-compartilhando.png" width="300" alt="Compartilhando a tela no PC, com o código e o botão Trocar tela">
+</p>
+
+<p align="center">
+  <img src="docs/pc-assistindo.png" width="620" alt="Assistindo a tela compartilhada, com os botões Expandir, Tela cheia e Sair">
 </p>
 
 ## O que faz
@@ -26,6 +30,9 @@
 - **Compartilhar pelo PC**: no Chrome ou Edge, escolha a tela, a janela ou a aba.
 - **Assistir em qualquer aparelho**: Android, iPhone ou PC, direto no navegador, digitando o código ou abrindo o link `?sala=CÓDIGO`.
 - **Mais de uma pessoa pode assistir** ao mesmo tempo, e quem compartilha vê quantas estão conectadas.
+- **Trocar tela** (PC): muda a tela, janela ou aba compartilhada sem gerar outro código e sem derrubar quem está assistindo.
+- **Expandir e Tela cheia** para quem assiste, inclusive no iPhone.
+- **Funciona em redes diferentes** (Wi-Fi e 4G), com o servidor de retransmissão da Cloudflare quando a conexão direta não é possível.
 
 ## Como funciona
 
