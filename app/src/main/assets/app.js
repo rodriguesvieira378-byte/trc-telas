@@ -29,6 +29,22 @@ function loadIce() {
   return iceLoaded;
 }
 loadIce();
+/* ---------- registro de erros (tabela logs no Supabase; só grava, ninguém de fora lê) ---------- */
+const APP_VER = '2.6';
+function netType() { const c = navigator.connection; return c ? (c.type && c.type !== 'unknown' ? c.type : (c.effectiveType || '')) : ''; }
+function report(evento, detalhe, sala) {
+  try {
+    const body = JSON.stringify({ origem: window.AndroidScreen ? 'apk' : 'web', evento: String(evento).slice(0, 40),
+      detalhe: detalhe ? String(detalhe).slice(0, 4000) : null, rede: netType().slice(0, 20) || null,
+      aparelho: navigator.userAgent.slice(0, 200), versao: APP_VER, sala: sala ? String(sala).slice(0, 10) : null });
+    fetch(RT_URL.replace('wss://', 'https://').replace('/realtime/v1/websocket', '/rest/v1/logs'), {
+      method: 'POST', keepalive: true, body,
+      headers: { apikey: RT_KEY, Authorization: 'Bearer ' + RT_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' }
+    }).catch(() => {});
+  } catch {}
+}
+window.addEventListener('error', e => report('erro-js', (e.message || '') + ' @' + (e.lineno || '') + ':' + (e.colno || '')));
+window.addEventListener('unhandledrejection', e => report('erro-js', 'promise: ' + (e.reason && (e.reason.stack || e.reason.message) || e.reason)));
 const QUALITY = {
   eco:    { fps: 15, height: 720,  kbps: 1500 },
   normal: { fps: 30, height: 1080, kbps: 4000 },
@@ -156,7 +172,7 @@ async function startWebShare() {
 
   loadIce();
   const sinal = new Sinal(PREFIX + code, code);
-  host = { sinal, stream, pcs: new Map(), q, statsTimer: null };
+  host = { sinal, stream, pcs: new Map(), q, statsTimer: null, code };
   vt.onended = stopShare;
 
   sinal.onmsg = m => {
@@ -170,6 +186,7 @@ async function startWebShare() {
 
   try { await sinal.open(); }
   catch (e) {
+    report('compartilhar-falhou', 'servidor: ' + e.message, code);
     stopShare();
     alertMsg(e.message === 'id-taken' ? 'Esse código já está em uso. Toque em Compartilhar tela de novo.' : 'Sem conexão com o servidor. Confira a internet.');
     return;
@@ -197,6 +214,7 @@ async function addViewer(viewerId) {
   host.pcs.set(viewerId, pc);
   host.stream.getTracks().forEach(t => pc.addTrack(t, host.stream));
   pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed') report('host-ice-falhou', 'ice=' + pc.iceConnectionState, host && host.code);
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') removeViewer(viewerId);
     else updateHost();
   };
@@ -358,7 +376,7 @@ async function watch(code) {
   const hostId = PREFIX + code;
   loadIce();
   const sinal = new Sinal('v-' + Math.random().toString(36).slice(2, 12), code);
-  view = { sinal, pc: null, hostId, timer: null, fpsTimer: null, retry: null, gotOffer: false };
+  view = { sinal, pc: null, hostId, timer: null, fpsTimer: null, retry: null, gotOffer: false, code, t0: Date.now(), tries: 0 };
   const myView = view;
 
   sinal.onmsg = async m => {
@@ -380,6 +398,7 @@ async function watch(code) {
         if (v.srcObject !== e.streams[0]) {
           v.srcObject = e.streams[0]; v.muted = true; v.play().catch(() => {});
           show('viewer');
+          report('assistiu-ok', 'video em ' + (Date.now() - view.t0) + ' ms, pedidos: ' + view.tries, view.code);
           view.fpsTimer = setInterval(readViewerFps, 1000);
         }
         $('btnMute').classList.toggle('hidden', e.streams[0].getAudioTracks().length === 0);
@@ -409,7 +428,7 @@ async function watch(code) {
   }
   if (view !== myView) return;
   setWatchStatus('Procurando a tela ' + code + '…');
-  const ask = () => sinal.send('OFFER', hostId, { t: 'join' });
+  const ask = () => { view.tries++; sinal.send('OFFER', hostId, { t: 'join' }); };
   ask();
   view.retry = setInterval(ask, 3000); // repete o pedido em redes lentas
   view.timer = setTimeout(() => endView('Não encontrei a tela ' + code + '. Confira as letras e se quem compartilha ainda está com a transmissão aberta.', true), 20000);
@@ -424,6 +443,11 @@ async function readViewerFps() {
 }
 
 function endView(msg = '', isErr = false) {
+  if (view && isErr) {
+    let ice = '';
+    try { if (view.pc) ice = ' | ice=' + view.pc.iceConnectionState + ' conn=' + view.pc.connectionState; } catch {}
+    report('assistir-falhou', msg + ' | ' + (Date.now() - view.t0) + ' ms, pedidos: ' + view.tries + ', oferta: ' + view.gotOffer + ice, view.code);
+  }
   if (view) {
     clearTimeout(view.timer); clearInterval(view.fpsTimer); clearInterval(view.retry);
     view.sinal.send('LEAVE', view.hostId, { t: 'bye' });

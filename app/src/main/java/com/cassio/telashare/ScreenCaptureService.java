@@ -138,7 +138,11 @@ public class ScreenCaptureService extends Service {
 
     /* ---------------- captura ---------------- */
 
+    private volatile String sala;
+
     private void setup(Intent data, String hostId) {
+        Relatorio.instalar(this);
+        sala = hostId != null ? hostId.replace("trctelas-", "") : null;
         try {
             PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions
                     .builder(getApplicationContext()).createInitializationOptions());
@@ -163,6 +167,7 @@ public class ScreenCaptureService extends Service {
             capturer.startCapture(size[0], size[1], quality.fps);
             track = factory.createVideoTrack("tela", source);
         } catch (Exception e) {
+            Relatorio.enviar("captura-falhou", String.valueOf(e), sala);
             emit("error", 0, "Não foi possível capturar a tela neste aparelho.");
             main.post(this::stopSelf);
             return;
@@ -173,7 +178,7 @@ public class ScreenCaptureService extends Service {
         signal = new SignalClient(new SignalClient.Listener() {
             @Override public void onOpen() { engine.execute(() -> emitLive()); }
             @Override public void onIdTaken() { emit("id-taken", 0, null); main.post(ScreenCaptureService.this::stopSelf); }
-            @Override public void onFailure(String reason) { emit("error", 0, reason); }
+            @Override public void onFailure(String reason) { Relatorio.enviar("servidor-falhou", reason, sala); emit("error", 0, reason); }
             @Override public void onMessage(String type, String src, JSONObject p) {
                 engine.execute(() -> handleMessage(type, src, p));
             }
@@ -246,8 +251,9 @@ public class ScreenCaptureService extends Service {
             }
             @Override public void onConnectionChange(PeerConnection.PeerConnectionState s) {
                 engine.execute(() -> {
-                    if (s == PeerConnection.PeerConnectionState.CONNECTED) { connected.add(vid); emitLive(); }
-                    else if (s == PeerConnection.PeerConnectionState.FAILED || s == PeerConnection.PeerConnectionState.CLOSED) removeViewer(vid);
+                    if (s == PeerConnection.PeerConnectionState.CONNECTED) { connected.add(vid); emitLive(); Relatorio.enviar("compartilhou-ok", "alguém conectou", sala); }
+                    else if (s == PeerConnection.PeerConnectionState.FAILED) Relatorio.enviar("host-ice-falhou", "a conexão de vídeo com quem assiste falhou", sala);
+                    if (s == PeerConnection.PeerConnectionState.FAILED || s == PeerConnection.PeerConnectionState.CLOSED) removeViewer(vid);
                 });
             }
             @Override public void onSignalingChange(PeerConnection.SignalingState s) { }
