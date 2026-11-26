@@ -220,7 +220,16 @@ public class ScreenCaptureService extends Service {
     }
 
     private void addViewer(final String vid) {
-        if (pcs.containsKey(vid) || track == null) return;
+        if (track == null) return;
+        PeerConnection existing = pcs.get(vid);
+        if (existing != null) {
+            // o pedido chegou de novo: a oferta pode ter se perdido numa rede lenta
+            SessionDescription ld = existing.getLocalDescription();
+            if (existing.signalingState() == PeerConnection.SignalingState.HAVE_LOCAL_OFFER && ld != null) {
+                try { signal.send("OFFER", vid, new JSONObject().put("t", "sdp").put("sdp", ld.description)); } catch (Exception ignored) { }
+            }
+            return;
+        }
         PeerConnection.RTCConfiguration cfg = new PeerConnection.RTCConfiguration(ICE);
         cfg.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
         cfg.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;

@@ -22,7 +22,7 @@ function loadIce() {
     const url = (location.protocol.startsWith('http') && !location.host.includes('appassets') ? '' : WEB_URL.replace(/\/$/, '')) + '/api/turn';
     iceLoaded = Promise.race([
       fetch(url).then(r => r.ok ? r.json() : null),
-      new Promise(r => setTimeout(() => r(null), 4000))
+      new Promise(r => setTimeout(() => r(null), 3000))
     ]).then(d => { if (d && d.iceServers && d.iceServers.length) ICE = { iceServers: STUN.concat(d.iceServers) }; })
       .catch(() => {});
   }
@@ -154,7 +154,7 @@ async function startWebShare() {
   show('hostView');
   $('hostStatus').textContent = 'Conectando ao servidor…';
 
-  await loadIce();
+  loadIce();
   const sinal = new Sinal(PREFIX + code, code);
   host = { sinal, stream, pcs: new Map(), q, statsTimer: null };
   vt.onended = stopShare;
@@ -179,7 +179,20 @@ async function startWebShare() {
 }
 
 async function addViewer(viewerId) {
-  if (!host || host.pcs.has(viewerId)) return;
+  if (!host) return;
+  const old = host.pcs.get(viewerId);
+  if (old) {
+    // o pedido chegou de novo: a oferta pode ter se perdido numa rede lenta
+    if (old.signalingState === 'have-local-offer' && old.localDescription) host.sinal.send('OFFER', viewerId, { t: 'sdp', sdp: old.localDescription.sdp });
+    return;
+  }
+  host.joining = host.joining || new Set();
+  if (host.joining.has(viewerId)) return;
+  host.joining.add(viewerId);
+  await loadIce();
+  if (!host) return;
+  host.joining.delete(viewerId);
+  if (host.pcs.has(viewerId)) return;
   const pc = makePc(c => host && host.sinal.send('CANDIDATE', viewerId, { t: 'ice', c }));
   host.pcs.set(viewerId, pc);
   host.stream.getTracks().forEach(t => pc.addTrack(t, host.stream));
@@ -339,21 +352,28 @@ let view = null; // { sinal, pc, hostId, timer, fpsTimer }
 async function watch(code) {
   code = code.trim().toUpperCase();
   if (code.length !== 6) { setWatchStatus('O código tem 6 letras ou números.', true); return; }
-  setWatchStatus('Conectando…');
+  setWatchStatus('Conectando ao servidor…');
   $('btnWatch').disabled = true;
 
   const hostId = PREFIX + code;
-  await loadIce();
+  loadIce();
   const sinal = new Sinal('v-' + Math.random().toString(36).slice(2, 12), code);
-  view = { sinal, pc: null, hostId, timer: null, fpsTimer: null };
-  view.timer = setTimeout(() => endView('Nenhuma tela com esse código. Confira as letras.', true), 15000);
+  view = { sinal, pc: null, hostId, timer: null, fpsTimer: null, retry: null, gotOffer: false };
+  const myView = view;
 
   sinal.onmsg = async m => {
-    if (!view || m.src !== hostId) return;
+    if (!view || view !== myView || m.src !== hostId) return;
     const p = m.payload || {};
     if (m.type === 'OFFER' && p.t === 'sdp') {
+      if (view.gotOffer) return;
+      view.gotOffer = true;
+      clearInterval(view.retry);
+      setWatchStatus('Tela encontrada. Recebendo o vídeo…');
+      await loadIce();
+      if (view !== myView) return;
       const pc = makePc(c => sinal.send('CANDIDATE', hostId, { t: 'ice', c }));
       view.pc = pc;
+      for (const c of view.early || []) addCandidate(pc, c);
       pc.ontrack = e => {
         clearTimeout(view.timer);
         const v = $('remote');
@@ -365,27 +385,34 @@ async function watch(code) {
         $('btnMute').classList.toggle('hidden', e.streams[0].getAudioTracks().length === 0);
       };
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'failed') endView('Não consegui conectar com essa tela. Tente em outra rede (Wi-Fi ou 4G).', true);
+        if (pc.connectionState === 'failed') endView('Achei a tela, mas a conexão de vídeo não passou por esta rede. Tente outra rede (Wi-Fi ou 4G).', true);
       };
       try {
         await setRemote(pc, { type: 'offer', sdp: p.sdp });
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         sinal.send('ANSWER', hostId, { t: 'sdp', sdp: pc.localDescription.sdp });
-      } catch { endView('Não consegui conectar com essa tela.', true); }
+      } catch { endView('Não consegui abrir o vídeo dessa tela.', true); }
     } else if (m.type === 'CANDIDATE' && p.t === 'ice') {
-      addCandidate(view.pc, p.c);
+      if (view.pc) addCandidate(view.pc, p.c);
+      else (view.early = view.early || []).push(p.c); // chegou antes da oferta
     } else if (m.type === 'LEAVE') {
       endView('A transmissão terminou.');
-    } else if (m.type === 'EXPIRE') {
-      endView('Nenhuma tela com esse código. Confira as letras.', true);
     }
   };
 
   try {
     await sinal.open();
-    sinal.send('OFFER', hostId, { t: 'join' });
-  } catch { endView('Sem conexão com o servidor. Confira a internet.', true); }
+  } catch {
+    endView('Sem conexão com o servidor. A internet pode estar lenta ou esta rede pode bloquear o site.', true);
+    return;
+  }
+  if (view !== myView) return;
+  setWatchStatus('Procurando a tela ' + code + '…');
+  const ask = () => sinal.send('OFFER', hostId, { t: 'join' });
+  ask();
+  view.retry = setInterval(ask, 3000); // repete o pedido em redes lentas
+  view.timer = setTimeout(() => endView('Não encontrei a tela ' + code + '. Confira as letras e se quem compartilha ainda está com a transmissão aberta.', true), 20000);
 }
 
 async function readViewerFps() {
@@ -398,7 +425,7 @@ async function readViewerFps() {
 
 function endView(msg = '', isErr = false) {
   if (view) {
-    clearTimeout(view.timer); clearInterval(view.fpsTimer);
+    clearTimeout(view.timer); clearInterval(view.fpsTimer); clearInterval(view.retry);
     view.sinal.send('LEAVE', view.hostId, { t: 'bye' });
     if (view.pc) try { view.pc.close(); } catch {}
     view.sinal.close();
