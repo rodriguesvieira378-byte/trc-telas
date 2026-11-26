@@ -31,6 +31,7 @@
 - **Assistir em qualquer aparelho**: Android, iPhone ou PC, direto no navegador, digitando o código ou abrindo o link `?sala=CÓDIGO`.
 - **Mais de uma pessoa pode assistir** ao mesmo tempo, e quem compartilha vê quantas estão conectadas.
 - **Trocar tela** (PC): muda a tela, janela ou aba compartilhada sem gerar outro código e sem derrubar quem está assistindo.
+- **Trocar de aplicativo** (Android): o app compartilha a tela inteira do celular, então é só abrir outro aplicativo que quem assiste vê a troca na hora, sem reconectar.
 - **Expandir e Tela cheia** para quem assiste, inclusive no iPhone.
 - **Funciona em redes diferentes** (Wi-Fi e 4G), com o servidor de retransmissão da Cloudflare quando a conexão direta não é possível.
 
