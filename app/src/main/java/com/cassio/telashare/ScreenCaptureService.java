@@ -89,11 +89,34 @@ public class ScreenCaptureService extends Service {
     private final Set<String> connected = new HashSet<>();
     private boolean stopping = false;
 
-    private static final List<PeerConnection.IceServer> ICE = Arrays.asList(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-            PeerConnection.IceServer.builder(Arrays.asList("turn:eu-0.turn.peerjs.com:3478", "turn:us-0.turn.peerjs.com:3478"))
-                    .setUsername("peerjs").setPassword("peerjsp").createIceServer()
-    );
+    /** STUN grátis; o TURN da Cloudflare entra em loadTurn() com credenciais temporárias. */
+    private final List<PeerConnection.IceServer> ICE = new ArrayList<>(Arrays.asList(
+            PeerConnection.IceServer.builder(Arrays.asList("stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302")).createIceServer()
+    ));
+
+    /** Busca as credenciais do TURN em https://trc-telas.vercel.app/api/turn (a chave secreta fica no servidor). */
+    private void loadTurn() {
+        try {
+            okhttp3.OkHttpClient http = new okhttp3.OkHttpClient.Builder()
+                    .callTimeout(5, java.util.concurrent.TimeUnit.SECONDS).build();
+            okhttp3.Response r = http.newCall(new okhttp3.Request.Builder()
+                    .url("https://trc-telas.vercel.app/api/turn").build()).execute();
+            if (!r.isSuccessful() || r.body() == null) return;
+            org.json.JSONArray servers = new JSONObject(r.body().string()).optJSONArray("iceServers");
+            if (servers == null) return;
+            for (int i = 0; i < servers.length(); i++) {
+                JSONObject sv = servers.getJSONObject(i);
+                List<String> urls = new ArrayList<>();
+                org.json.JSONArray u = sv.optJSONArray("urls");
+                if (u != null) for (int k = 0; k < u.length(); k++) urls.add(u.getString(k));
+                else if (sv.has("urls")) urls.add(sv.getString("urls"));
+                if (urls.isEmpty()) continue;
+                PeerConnection.IceServer.Builder b = PeerConnection.IceServer.builder(urls);
+                if (sv.has("username")) b.setUsername(sv.getString("username")).setPassword(sv.optString("credential"));
+                ICE.add(b.createIceServer());
+            }
+        } catch (Exception ignored) { }
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -142,6 +165,8 @@ public class ScreenCaptureService extends Service {
             main.post(this::stopSelf);
             return;
         }
+
+        loadTurn();
 
         signal = new SignalClient(new SignalClient.Listener() {
             @Override public void onOpen() { engine.execute(() -> emitLive()); }

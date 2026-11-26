@@ -10,8 +10,8 @@ android {
         applicationId = "com.cassio.trctelas"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "2.1"
+        versionCode = 4
+        versionName = "2.2"
         // só processadores de celular (ARM): deixa o APK bem menor
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

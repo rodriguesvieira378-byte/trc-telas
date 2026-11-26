@@ -13,12 +13,22 @@ const PREFIX = 'trctelas-';                         // id de quem compartilha: t
 const WEB_URL = 'https://trc-telas.vercel.app/';    // usado no link enviado pelo APK
 const RT_URL = 'wss://iptwnahbgwnollnwrqdx.supabase.co/realtime/v1/websocket';
 const RT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlwdHduYWhiZ3dub2xsbndycWR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3MTUzNzYsImV4cCI6MjExMTI5MTM3Nn0.ymrqyXGTxgbTaTc6V_MDX7wEiEF-PXA0q5VYhJax6Dw';
-const ICE = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' }
-  ]
-};
+// STUN grátis + TURN da Cloudflare (credenciais temporárias geradas por /api/turn)
+const STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+let ICE = { iceServers: STUN };
+let iceLoaded = null;
+function loadIce() {
+  if (!iceLoaded) {
+    const url = (location.protocol.startsWith('http') && !location.host.includes('appassets') ? '' : WEB_URL.replace(/\/$/, '')) + '/api/turn';
+    iceLoaded = Promise.race([
+      fetch(url).then(r => r.ok ? r.json() : null),
+      new Promise(r => setTimeout(() => r(null), 4000))
+    ]).then(d => { if (d && d.iceServers && d.iceServers.length) ICE = { iceServers: STUN.concat(d.iceServers) }; })
+      .catch(() => {});
+  }
+  return iceLoaded;
+}
+loadIce();
 const QUALITY = {
   eco:    { fps: 15, height: 720,  kbps: 1500 },
   normal: { fps: 30, height: 1080, kbps: 4000 },
@@ -144,6 +154,7 @@ async function startWebShare() {
   show('hostView');
   $('hostStatus').textContent = 'Conectando ao servidor…';
 
+  await loadIce();
   const sinal = new Sinal(PREFIX + code, code);
   host = { sinal, stream, pcs: new Map(), q, statsTimer: null };
   vt.onended = stopShare;
@@ -292,6 +303,7 @@ async function watch(code) {
   $('btnWatch').disabled = true;
 
   const hostId = PREFIX + code;
+  await loadIce();
   const sinal = new Sinal('v-' + Math.random().toString(36).slice(2, 12), code);
   view = { sinal, pc: null, hostId, timer: null, fpsTimer: null };
   view.timer = setTimeout(() => endView('Nenhuma tela com esse código. Confira as letras.', true), 15000);
